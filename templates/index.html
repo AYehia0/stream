@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StreamLLM</title>
+  <script src="https://cdn.tailwindcss.com?v=3.4.16"></script>
+  <!-- Add marked.js for markdown parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
+  <!-- Add highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/streaming-markdown@0.2.15/smd.min.js"></script>
+  <style>
+    /* Custom scrollbar */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #1e1e2e;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background-color: #7c3aed;
+      border-radius: 20px;
+    }
+    
+    /* Typing animation */
+    .typing-dot {
+      animation: typing 1s infinite;
+    }
+    .typing-dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+    .typing-dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+    @keyframes typing {
+      0%, 100% {
+        opacity: 0.2;
+      }
+      50% {
+        opacity: 1;
+      }
+    }
+
+    /* Fade in animation for messages */
+    .message-fade-in {
+      animation: fadeIn 0.3s ease-in;
+    }
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Streaming text cursor */
+    .streaming-cursor::after {
+      content: '|';
+      animation: blink 1s infinite;
+      color: #a855f7;
+    }
+    @keyframes blink {
+      0%, 50% {
+        opacity: 1;
+      }
+      51%, 100% {
+        opacity: 0;
+      }
+    }
+
+    /* Markdown styling */
+    .markdown-content h1,
+    .markdown-content h2,
+    .markdown-content h3,
+    .markdown-content h4,
+    .markdown-content h5,
+    .markdown-content h6 {
+      color: #a855f7;
+      font-weight: bold;
+      margin: 1rem 0 0.5rem 0;
+    }
+
+    .markdown-content h1 { font-size: 1.5rem; }
+    .markdown-content h2 { font-size: 1.3rem; }
+    .markdown-content h3 { font-size: 1.1rem; }
+
+    .markdown-content p {
+      margin: 0.5rem 0;
+      line-height: 1.6;
+    }
+
+    .markdown-content ul,
+    .markdown-content ol {
+      margin: 0.5rem 0;
+      padding-left: 1.5rem;
+    }
+
+    .markdown-content li {
+      margin: 0.25rem 0;
+    }
+
+    .markdown-content blockquote {
+      border-left: 4px solid #7c3aed;
+      padding-left: 1rem;
+      margin: 1rem 0;
+      font-style: italic;
+      background-color: rgba(124, 58, 237, 0.1);
+      border-radius: 0 0.5rem 0.5rem 0;
+    }
+
+    .markdown-content code {
+      background-color: #374151;
+      color: #f3f4f6;
+      padding: 0.125rem 0.25rem;
+      border-radius: 0.25rem;
+      font-family: 'Courier New', monospace;
+      font-size: 0.875rem;
+    }
+
+    .markdown-content pre {
+      background-color: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 0.5rem;
+      padding: 1rem;
+      margin: 1rem 0;
+      overflow-x: auto;
+    }
+
+    .markdown-content pre code {
+      background-color: transparent;
+      padding: 0;
+      border-radius: 0;
+    }
+
+    .markdown-content table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1rem 0;
+    }
+
+    .markdown-content th,
+    .markdown-content td {
+      border: 1px solid #374151;
+      padding: 0.5rem;
+      text-align: left;
+    }
+
+    .markdown-content th {
+      background-color: #374151;
+      font-weight: bold;
+    }
+
+    .markdown-content a {
+      color: #a855f7;
+      text-decoration: underline;
+    }
+
+    .markdown-content a:hover {
+      color: #c084fc;
+    }
+
+    .markdown-content strong {
+      font-weight: bold;
+      color: #f3f4f6;
+    }
+
+    .markdown-content em {
+      font-style: italic;
+    }
+
+    .markdown-content hr {
+      border: none;
+      border-top: 1px solid #374151;
+      margin: 1.5rem 0;
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col">
+  <div class="flex flex-col h-screen max-w-4xl mx-auto w-full p-4">
+    <!-- Header -->
+    <header class="py-6 border-b border-gray-700">
+      <div class="flex items-center justify-center space-x-3">
+        <div class="w-10 h-10 rounded-full bg-gradient-to-r from-purple-600 to-violet-600 flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h1 class="text-3xl font-bold bg-gradient-to-r from-purple-400 to-violet-400 bg-clip-text text-transparent">
+          StreamLLM
+        </h1>
+      </div>
+    </header>
+    
+    <!-- Chat container -->
+    <div id="chat-container" class="flex-1 overflow-y-auto py-6 space-y-6 custom-scrollbar">
+      <!-- Welcome message -->
+      <div class="flex items-start message-fade-in">
+        <div class="w-10 h-10 rounded-full bg-gradient-to-r from-purple-600 to-violet-600 flex items-center justify-center mr-3 flex-shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <div class="bg-gray-800 border border-gray-700 rounded-2xl p-4 max-w-[85%] shadow-lg">
+          <div class="text-gray-100 markdown-content">
+            <p>Hello! I'm your AI assistant. How can I help you today?</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Input area -->
+    <div class="border-t border-gray-700 pt-6">
+      <form id="chat-form" class="flex gap-3">
+        <div class="flex-1 relative">
+          <input 
+            type="text" 
+            id="message-input" 
+            class="w-full bg-gray-800 border border-gray-600 rounded-xl px-4 py-3 pr-12 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 placeholder-gray-400"
+            placeholder="Type your message..."
+            autocomplete="off"
+          >
+          <div id="input-status" class="absolute right-3 top-1/2 transform -translate-y-1/2 hidden">
+            <div class="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
+          </div>
+        </div>
+        <button 
+          type="submit" 
+          id="send-button"
+          class="bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 disabled:from-gray-600 disabled:to-gray-600 text-white px-6 py-3 rounded-xl transition-all duration-200 flex items-center justify-center min-w-[60px] shadow-lg"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd" />
+          </svg>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const chatContainer = document.getElementById('chat-container');
+      const chatForm = document.getElementById('chat-form');
+      const messageInput = document.getElementById('message-input');
+      const sendButton = document.getElementById('send-button');
+      const inputStatus = document.getElementById('input-status');
+      
+      let isStreaming = false;
+      let currentEventSource = null;
+
+      // Configure marked for better rendering
+      marked.setOptions({
+        highlight: function(code, lang) {
+          if (lang && hljs.getLanguage(lang)) {
+            try {
+              return hljs.highlight(code, { language: lang }).value;
+            } catch (err) {}
+          }
+          return hljs.highlightAuto(code).value;
+        },
+        breaks: true,
+        gfm: true
+      });
+      
+      // Function to render markdown
+      function renderMarkdown(text) {
+        return marked.parse(text);
+      }
+      
+      // Function to add a message to the chat
+      function addMessage(content, isUser = false, isStreaming = false) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'flex items-start message-fade-in';
+        
+        if (isUser) {
+          messageDiv.classList.add('justify-end');
+          messageDiv.innerHTML = `
+            <div class="bg-gradient-to-r from-purple-600 to-violet-600 rounded-2xl p-4 max-w-[85%] shadow-lg">
+              <div class="text-white markdown-content">${escapeHtml(content)}</div>
+            </div>
+            <div class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center ml-3 flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
+              </svg>
+            </div>
+          `;
+        } else {
+          const streamingClass = isStreaming ? 'streaming-cursor' : '';
+          messageDiv.innerHTML = `
+            <div class="w-10 h-10 rounded-full bg-gradient-to-r from-purple-600 to-violet-600 flex items-center justify-center mr-3 flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div class="bg-gray-800 border border-gray-700 rounded-2xl p-4 max-w-[85%] shadow-lg">
+              <div class="text-gray-100 markdown-content ${streamingClass}" id="message-content">${content}</div>
+            </div>
+          `;
+        }
+        
+        chatContainer.appendChild(messageDiv);
+        scrollToBottom();
+        return messageDiv;
+      }
+      
+      // Function to add typing indicator
+      function addTypingIndicator() {
+        const typingDiv = document.createElement('div');
+        typingDiv.id = 'typing-indicator';
+        typingDiv.className = 'flex items-start message-fade-in';
+        typingDiv.innerHTML = `
+          <div class="w-10 h-10 rounded-full bg-gradient-to-r from-purple-600 to-violet-600 flex items-center justify-center mr-3 flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div class="bg-gray-800 border border-gray-700 rounded-2xl p-4 flex items-center shadow-lg">
+            <span class="typing-dot text-purple-400">●</span>
+            <span class="typing-dot mx-1 text-purple-400">●</span>
+            <span class="typing-dot text-purple-400">●</span>
+          </div>
+        `;
+        chatContainer.appendChild(typingDiv);
+        scrollToBottom();
+      }
+      
+      // Function to remove typing indicator
+      function removeTypingIndicator() {
+        const typingIndicator = document.getElementById('typing-indicator');
+        if (typingIndicator) {
+          typingIndicator.remove();
+        }
+      }
+      
+      // Function to scroll to bottom
+      function scrollToBottom() {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      }
+      
+      // Function to escape HTML
+      function escapeHtml(unsafe) {
+        return unsafe
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+      
+      // Function to set UI state
+      function setUIState(streaming) {
+        isStreaming = streaming;
+        sendButton.disabled = streaming;
+        messageInput.disabled = streaming;
+        
+        if (streaming) {
+          inputStatus.classList.remove('hidden');
+          messageInput.classList.add('opacity-50');
+        } else {
+          inputStatus.classList.add('hidden');
+          messageInput.classList.remove('opacity-50');
+        }
+      }
+      
+      // Handle form submission
+      chatForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const message = messageInput.value.trim();
+        if (!message || isStreaming) return;
+        
+        // Add user message to chat
+        addMessage(message, true);
+        
+        // Clear input and set UI state
+        messageInput.value = '';
+        setUIState(true);
+        
+        // Add typing indicator
+        addTypingIndicator();
+        
+        try {
+          // Close any existing EventSource
+          if (currentEventSource) {
+            currentEventSource.close();
+          }
+          
+          // Create EventSource for streaming
+          const eventSource = new EventSource(`/chat?message=${encodeURIComponent(message)}`);
+          currentEventSource = eventSource;
+          
+          let aiMessageDiv = null;
+          let messageContent = null;
+          let accumulatedText = '';
+          
+          eventSource.onopen = () => {
+            console.log('EventSource connection opened');
+            removeTypingIndicator();
+            
+            // Create AI message container
+            aiMessageDiv = addMessage('', false, true);
+            messageContent = aiMessageDiv.querySelector('#message-content');
+          };
+          
+          eventSource.onmessage = (event) => {
+            try {
+              // the data are stream of text chunks
+              const data = event.data;
+              console.log('Received:', data);
+              if (data === '[DONE]') {
+                console.log('Stream completed');
+                // End of stream
+                setUIState(false);
+                if (messageContent) {
+                  messageContent.classList.remove('streaming-cursor');
+                  // Final render of complete markdown
+                  messageContent.innerHTML = renderMarkdown(accumulatedText);
+                  // Highlight code blocks
+                  messageContent.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                  });
+                }
+                eventSource.close();
+                return;
+              } else {
+                // Append new text to accumulated text
+                accumulatedText += data;
+                if (messageContent) {
+                  // For streaming, we'll render markdown in real-time
+                  // but this might cause some flickering with incomplete markdown
+                  // You can choose to render as plain text during streaming and only render markdown at the end
+                  try {
+                    messageContent.innerHTML = renderMarkdown(accumulatedText);
+                    messageContent.classList.add('streaming-cursor');
+                    // Highlight any complete code blocks
+                    messageContent.querySelectorAll('pre code').forEach((block) => {
+                      hljs.highlightElement(block);
+                    });
+                  } catch (markdownError) {
+                    // If markdown parsing fails (incomplete markdown), show as text
+                    messageContent.textContent = accumulatedText;
+                    messageContent.classList.add('streaming-cursor');
+                  }
+                }
+                scrollToBottom();
+              }
+            } catch (error) {
+              console.error('Error parsing SSE data:', error);
+            }
+          };
+          
+          eventSource.onerror = (error) => {
+            console.error('EventSource error:', error);
+            eventSource.close();
+            removeTypingIndicator();
+            
+            if (!aiMessageDiv) {
+              addMessage('Sorry, there was an error processing your request. Please try again.');
+            } else if (messageContent && accumulatedText === '') {
+              messageContent.innerHTML = '<p>Sorry, there was an error processing your request. Please try again.</p>';
+              messageContent.classList.remove('streaming-cursor');
+            }
+            
+            setUIState(false);
+            messageInput.focus();
+          };
+          
+        } catch (error) {
+          console.error('Error:', error);
+          removeTypingIndicator();
+          addMessage('Sorry, there was an error processing your request. Please try again.');
+          setUIState(false);
+          messageInput.focus();
+        }
+      });
+      
+      // Focus input on load
+      messageInput.focus();
+      
+      // Handle Enter key in input
+      messageInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          chatForm.dispatchEvent(new Event('submit'));
+        }
+      });
+      
+      // Cleanup on page unload
+      window.addEventListener('beforeunload', () => {
+        if (currentEventSource) {
+          currentEventSource.close();
+        }
+      });
+    });
+  </script>
+</body>
+</html>
