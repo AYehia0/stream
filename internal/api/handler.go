@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -31,6 +32,7 @@ type ChatRequest struct {
 
 type ChatRequestBody struct {
 	Messages []ChatMessage `json:"messages"`
+	Model    chat.ModelID  `json:"model,omitempty"`
 }
 
 func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) {
@@ -51,9 +53,16 @@ func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var model chat.ModelID
+	if body.Model == "" {
+		model = chat.ModelIDGEMMA
+	} else {
+		model = body.Model
+	}
+
 	req := chat.ChatRequest{
 		Messages:    []chat.Message{},
-		Model:       chat.ModelIDLLAMA370B,
+		Model:       model,
 		Stream:      true,
 		Temperature: 0.7,
 		TopP:        0.85,
@@ -61,25 +70,9 @@ func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	// add the user messages to the request
 	for _, msg := range body.Messages {
-		switch msg.Role {
-		case "user":
-			req.Messages = append(req.Messages, chat.Message{
-				Role:    chat.MessageRoleUser,
-				Content: msg.Content,
-			})
-		case "assistant":
-			req.Messages = append(req.Messages, chat.Message{
-				Role:    chat.MessageRoleAssistant,
-				Content: msg.Content,
-			})
-		case "system":
-			req.Messages = append(req.Messages, chat.Message{
-				Role:    chat.MessageRoleSystem,
-				Content: msg.Content,
-			})
-		default:
-			s.logger.Printf("invalid message role: %s", msg.Role)
-			http.Error(w, "Bad Request: Invalid message role", http.StatusBadRequest)
+		if err = addMessageToRequest(&req, msg); err != nil {
+			s.logger.Printf("failed to add message to request: %v", err)
+			http.Error(w, "Bad Request", http.StatusBadRequest)
 			return
 		}
 	}
@@ -112,7 +105,6 @@ func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if content := response.Response.Choices[0].Delta.Content; content != "" {
-			s.logger.Printf("sending responses: %s", content)
 			_, err := w.Write([]byte(content))
 			if err != nil {
 				s.logger.Printf("failed to write response: %v", err)
@@ -120,13 +112,34 @@ func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if f, ok := w.(http.Flusher); ok {
-				s.logger.Println("flushing response")
 				f.Flush()
-			} else {
-				s.logger.Println("response does not support flushing")
 			}
 		}
 	}
+}
+
+// add the message to the request
+func addMessageToRequest(req *chat.ChatRequest, msg ChatMessage) error {
+	switch msg.Role {
+	case "user":
+		req.Messages = append(req.Messages, chat.Message{
+			Role:    chat.MessageRoleUser,
+			Content: msg.Content,
+		})
+	case "assistant":
+		req.Messages = append(req.Messages, chat.Message{
+			Role:    chat.MessageRoleAssistant,
+			Content: msg.Content,
+		})
+	case "system":
+		req.Messages = append(req.Messages, chat.Message{
+			Role:    chat.MessageRoleSystem,
+			Content: msg.Content,
+		})
+	default:
+		return fmt.Errorf("invalid message role: %s", msg.Role)
+	}
+	return nil
 }
 
 // GET /status
