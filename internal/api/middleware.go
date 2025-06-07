@@ -16,8 +16,18 @@ type wrappedWriter struct {
 }
 
 func (w *wrappedWriter) WriteHeader(statusCode int) {
-	w.ResponseWriter.WriteHeader(statusCode)
 	w.statusCode = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *wrappedWriter) Write(b []byte) (int, error) {
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *wrappedWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 func Logging(logger logger.Logger, next http.Handler) http.Handler {
