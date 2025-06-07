@@ -7,7 +7,7 @@ import (
 // reload the application routes
 func (a *App) reloadRoutes() {
 
-	appHandler := api.NewServer(a.logger, tmpl)
+	appHandler := api.NewServer(a.logger)
 
 	a.router.HandleFunc("GET /status", appHandler.Status)
 	a.router.HandleFunc("POST /chat", appHandler.SendMessage)
