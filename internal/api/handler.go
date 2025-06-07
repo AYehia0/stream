@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"strconv"
@@ -28,6 +29,10 @@ type ChatRequest struct {
 	Stream bool    `json:"stream"`
 }
 
+type ChatRequestBody struct {
+	Messages []ChatMessage `json:"messages"`
+}
+
 func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) {
 	// Request
 	maxTokens, err := strconv.Atoi(os.Getenv("MAX_TOKENS"))
@@ -36,19 +41,47 @@ func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+
+	// get the body from the request body
+	// message should have this format: { body: [] ChatMessage{ role: "user", content: "Hello" }}
+	var body ChatRequestBody
+	if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
+		s.logger.Printf("failed to decode request body: %v", err)
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
 	req := chat.ChatRequest{
-		Messages: []chat.Message{
-			{
+		Messages:    []chat.Message{},
+		Model:       chat.ModelIDLLAMA370B,
+		Stream:      true,
+		Temperature: 0.7,
+		TopP:        0.85,
+		MaxTokens:   maxTokens,
+	}
+	// add the user messages to the request
+	for _, msg := range body.Messages {
+		switch msg.Role {
+		case "user":
+			req.Messages = append(req.Messages, chat.Message{
 				Role:    chat.MessageRoleUser,
-				Content: r.URL.Query().Get("message"),
-			},
-		},
-		Model:          chat.ModelIDLLAMA370B,
-		Stream:         true,
-		Temperature:    0.7,
-		TopP:           0.85,
-		ResponseFormat: "json",
-		MaxTokens:      maxTokens,
+				Content: msg.Content,
+			})
+		case "assistant":
+			req.Messages = append(req.Messages, chat.Message{
+				Role:    chat.MessageRoleAssistant,
+				Content: msg.Content,
+			})
+		case "system":
+			req.Messages = append(req.Messages, chat.Message{
+				Role:    chat.MessageRoleSystem,
+				Content: msg.Content,
+			})
+		default:
+			s.logger.Printf("invalid message role: %s", msg.Role)
+			http.Error(w, "Bad Request: Invalid message role", http.StatusBadRequest)
+			return
+		}
 	}
 
 	sse, cancel, err := s.groqClient.SendMessage(r.Context(), req)
@@ -66,6 +99,7 @@ func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+
 	for response := range sse {
 		if response.Error != nil {
 			s.logger.Printf("error in SSE stream: %v", response.Error)
@@ -74,17 +108,23 @@ func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if response.Response.ID == "" {
-			continue // skip empty responses
+			continue
 		}
 
-		// Write the event to the response
-		event := "data: " + response.Response.Choices[0].Delta.Content + "\n\n"
-		if _, err := w.Write([]byte(event)); err != nil {
-			s.logger.Printf("failed to write SSE event: %v", err)
-			return
-		}
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush() // flush the buffer to ensure the client receives the data immediately
+		if content := response.Response.Choices[0].Delta.Content; content != "" {
+			s.logger.Printf("sending responses: %s", content)
+			_, err := w.Write([]byte(content))
+			if err != nil {
+				s.logger.Printf("failed to write response: %v", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			if f, ok := w.(http.Flusher); ok {
+				s.logger.Println("flushing response")
+				f.Flush()
+			} else {
+				s.logger.Println("response does not support flushing")
+			}
 		}
 	}
 }
@@ -99,10 +139,4 @@ func (s *Server) Status(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Printf("failed to write response: %v", err)
 	}
-}
-
-// serves the index page : shows all the shares
-func (s *Server) Index(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Content-Type", "text/html")
-	s.tmpl.ExecuteTemplate(w, "index.html", nil)
 }
