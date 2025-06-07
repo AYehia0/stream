@@ -58,8 +58,6 @@ func (c *groqClient) SendMessage(ctx context.Context, req ChatRequest) (<-chan *
 
 	// Callback function to handle incoming SSE events
 	rm := conn.SubscribeToAll(func(e sse.Event) {
-		// is done ?
-		fmt.Println("Received SSE event:", e.Data)
 		if strings.Contains(e.Data, "[DONE]") {
 			cancel()
 			return
@@ -85,5 +83,4 @@ func (c *groqClient) SendMessage(ctx context.Context, req ChatRequest) (<-chan *
 		cancel()
 		rm()
 	}, nil
-
 }
