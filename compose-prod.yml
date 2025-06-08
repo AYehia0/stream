@@ -36,7 +36,7 @@ services:
       - passwords
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.stream.rule=Host(`stream.ayehia0.com`)"
+      - "traefik.http.routers.stream.rule=Host(`llm.ayehia0.com`)"
       - "traefik.http.routers.stream.entrypoints=websecure"
       - "traefik.http.routers.stream.tls.certresolver=myresolver"
       - "com.centurylinklabs.watchtower.enable=true"
