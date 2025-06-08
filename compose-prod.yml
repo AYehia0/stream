@@ -30,6 +30,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
   stream:
     image: ghcr.io/ayehia0/stream:prod
+    environment:
+      - SECRET_FILE=/run/secrets/passwords
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.stream.rule=Host(`stream.ayehia0.com`)"
@@ -40,5 +42,10 @@ services:
       mode: replicated
       replicas: 3
     restart: always
+
 volumes:
   letsencrypt:
+
+secrets:
+  passwords:
+    file: .env

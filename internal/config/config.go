@@ -2,30 +2,46 @@ package config
 
 import (
 	"bufio"
+	"fmt"
 	"os"
-	"stream/pkg/logger"
 	"strings"
 )
 
-func ReadEnv() {
-	if _, err := os.Stat(".env"); err == nil {
-		file, err := os.Open(".env")
-		if err != nil {
-			return
-		}
-		defer file.Close()
+const (
+	// PASSWORD_FILE is the environment variable that specifies the path to the password file.
+	PASSWORD_FILE = "PASSWORD_FILE"
+)
 
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if line == "" || line[0] == '#' {
-				continue // skip empty lines and comments
-			}
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				logger.Debug.Printf("Setting environment variable: %s=%s", parts[0], parts[1])
-				os.Setenv(parts[0], parts[1])
-			}
+func ReadEnv() error {
+	var envFilePath string
+
+	if passwordFilePath, ok := os.LookupEnv(PASSWORD_FILE); ok {
+		envFilePath = passwordFilePath
+	} else {
+		envFilePath = ".env"
+	}
+
+	file, err := os.Open(envFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to open env file %s: %w", envFilePath, err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" || line[0] == '#' {
+			continue // skip empty lines and comments
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			os.Setenv(parts[0], parts[1])
 		}
 	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading env file: %w", err)
+	}
+
+	return nil
 }

@@ -15,7 +15,11 @@ import (
 
 // @host	localhost:8080
 func main() {
-	config.ReadEnv()
+	err := config.ReadEnv()
+	if err != nil {
+		logger.Error.Printf("failed to read environment variables: %v", err)
+		os.Exit(1)
+	}
 
 	log := logger.NewStdLogger(logger.Info)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
