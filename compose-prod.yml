@@ -32,6 +32,8 @@ services:
     image: ghcr.io/ayehia0/stream:prod
     environment:
       - PASSWORD_FILE=/run/secrets/passwords
+    secrets:
+      - passwords
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.stream.rule=Host(`stream.ayehia0.com`)"
