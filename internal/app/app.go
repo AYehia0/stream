@@ -24,6 +24,17 @@ func New(logger logger.Logger) *App {
 
 func (a *App) Run(ctx context.Context) error {
 
+	a.router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "https://ayehia0.com/")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.Error(w, "Not Found", http.StatusNotFound)
+	})
+
 	a.reloadRoutes()
 
 	server := &http.Server{
