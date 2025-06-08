@@ -1,18 +1,48 @@
-# Stage 1: Module Caching
-FROM golang:1.24 AS modules
-WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
+ARG GO_VERSION=1.24
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS build
+LABEL org.opencontainers.image.source=https://github.com/ayehia0/stream
+WORKDIR /src
 
-# Stage 2: Build
-FROM golang:1.24 AS builder
-WORKDIR /app
-COPY --from=modules /go/pkg /go/pkg
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o app ./main.go
+RUN --mount=type=cache,target=/go/pkg/mod/ \
+    --mount=type=bind,source=go.sum,target=go.sum \
+    --mount=type=bind,source=go.mod,target=go.mod \
+    go mod download -x
 
-# Stage 3: Final minimal image
-FROM scratch
-COPY --from=builder /app/app /app/app
+ARG TARGETARCH
 
-ENTRYPOINT ["/app/app"]
+RUN --mount=type=cache,target=/go/pkg/mod/ \
+    --mount=type=bind,target=. \
+    CGO_ENABLED=0 GOARCH=$TARGETARCH go build -o /bin/server .
+
+FROM alpine:latest AS final
+
+LABEL org.opencontainers.image.source=https://github.com/ayehia0/stream
+
+RUN --mount=type=cache,target=/var/cache/apk \
+    apk --update add \
+        ca-certificates \
+        tzdata \
+        && \
+        update-ca-certificates
+
+# Create a non-privileged user that the app will run under.
+# See https://docs.docker.com/go/dockerfile-user-best-practices/
+ARG UID=10001
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --home "/nonexistent" \
+    --shell "/sbin/nologin" \
+    --no-create-home \
+    --uid "${UID}" \
+    appuser
+USER appuser
+
+# Copy the executable from the "build" stage.
+COPY --from=build /bin/server /bin/
+
+# Expose the port that the application listens on.
+EXPOSE 8080
+
+# What the container should run when it is started.
+ENTRYPOINT [ "/bin/server" ]
