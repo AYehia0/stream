@@ -35,8 +35,19 @@ type ChatRequestBody struct {
 	Model    chat.ModelID  `json:"model,omitempty"`
 }
 
-func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) {
-	// Request
+// SendMessage handles the POST /chat endpoint.
+//
+//	@Summary		Send a message to the LLM and receive a streamed response.
+//	@Description	This endpoint allows users to send a chat message to the LLM and receive a streamed response.
+//	@Tags			chat
+//	@Accept			json
+//	@Produce		text/event-stream
+//	@Param			body	body		ChatRequestBody	true	"Chat request body"
+//	@Success		200		{string}	string			"Streamed response"
+//	@Failure		400		{string}	string			"Bad Request"
+//	@Failure		500		{string}	string			"Internal Server Error"
+//	@Router			/chat [post]
+func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) { // Request
 	maxTokens, err := strconv.Atoi(os.Getenv("MAX_TOKENS"))
 	if err != nil {
 		s.logger.Printf("failed to parse MAX_TOKENS: %v", err)
@@ -55,7 +66,7 @@ func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	var model chat.ModelID
 	if body.Model == "" {
-		model = chat.ModelIDGEMMA
+		model = chat.ModelIDLLAMA38B
 	} else {
 		model = body.Model
 	}
@@ -96,7 +107,8 @@ func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) {
 	for response := range sse {
 		if response.Error != nil {
 			s.logger.Printf("error in SSE stream: %v", response.Error)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			// TODO: handle internal errors accordingly
+			http.Error(w, response.Error.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -142,14 +154,22 @@ func addMessageToRequest(req *chat.ChatRequest, msg ChatMessage) error {
 	return nil
 }
 
-// GET /status
+// Status handles the GET /status endpoint.
+//
+//	@Summary		Check the status of the server.
+//	@Description	This endpoint returns the current status of the server.
+//	@Tags			status
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	map[string]string	"Server status"
+//	@Failure		500	{string}	string				"Internal Server Error"
+//	@Router			/status [get]
 func (s *Server) Status(w http.ResponseWriter, r *http.Request) {
-	// Respond with a simple "OK" message for liveness checks
-	// TODO: check if the Groq API is reachable
-	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, err := w.Write([]byte("OK"))
-	if err != nil {
+
+	response := map[string]string{"status": "OK"}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		s.logger.Printf("failed to write response: %v", err)
 	}
 }

@@ -1,0 +1,132 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "This is a sample server for a Groq stream service.",
+        "title": "Stream Service API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "paths": {
+        "/chat": {
+            "post": {
+                "description": "This endpoint allows users to send a chat message to the LLM and receive a streamed response.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "Send a message to the LLM and receive a streamed response.",
+                "parameters": [
+                    {
+                        "description": "Chat request body",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.ChatRequestBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Streamed response",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/status": {
+            "get": {
+                "description": "This endpoint returns the current status of the server.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "status"
+                ],
+                "summary": "Check the status of the server.",
+                "responses": {
+                    "200": {
+                        "description": "Server status",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "api.ChatMessage": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.ChatRequestBody": {
+            "type": "object",
+            "properties": {
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.ChatMessage"
+                    }
+                },
+                "model": {
+                    "$ref": "#/definitions/chat.ModelID"
+                }
+            }
+        },
+        "chat.ModelID": {
+            "type": "string",
+            "enum": [
+                "llama3-8b-8192",
+                "llama3-70b-8192",
+                "mixtral-8x7b-32768",
+                "gemma-7b-it"
+            ],
+            "x-enum-varnames": [
+                "ModelIDLLAMA38B",
+                "ModelIDLLAMA370B",
+                "ModelIDMIXTRAL",
+                "ModelIDGEMMA"
+            ]
+        }
+    }
+}

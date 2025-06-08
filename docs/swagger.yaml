@@ -1,0 +1,89 @@
+definitions:
+  api.ChatMessage:
+    properties:
+      content:
+        type: string
+      role:
+        type: string
+    type: object
+  api.ChatRequestBody:
+    properties:
+      messages:
+        items:
+          $ref: '#/definitions/api.ChatMessage'
+        type: array
+      model:
+        $ref: '#/definitions/chat.ModelID'
+    type: object
+  chat.ModelID:
+    enum:
+    - llama3-8b-8192
+    - llama3-70b-8192
+    - mixtral-8x7b-32768
+    - gemma-7b-it
+    type: string
+    x-enum-varnames:
+    - ModelIDLLAMA38B
+    - ModelIDLLAMA370B
+    - ModelIDMIXTRAL
+    - ModelIDGEMMA
+host: localhost:8080
+info:
+  contact: {}
+  description: This is a sample server for a Groq stream service.
+  title: Stream Service API
+  version: "1.0"
+paths:
+  /chat:
+    post:
+      consumes:
+      - application/json
+      description: This endpoint allows users to send a chat message to the LLM and
+        receive a streamed response.
+      parameters:
+      - description: Chat request body
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.ChatRequestBody'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: Streamed response
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            type: string
+      summary: Send a message to the LLM and receive a streamed response.
+      tags:
+      - chat
+  /status:
+    get:
+      consumes:
+      - application/json
+      description: This endpoint returns the current status of the server.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Server status
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            type: string
+      summary: Check the status of the server.
+      tags:
+      - status
+swagger: "2.0"
