@@ -12,6 +12,7 @@ import (
 	"stream/internal/chat"
 	"stream/pkg/logger"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -134,4 +135,58 @@ func TestSendMessage_InvalidRole(t *testing.T) {
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", res.StatusCode)
 	}
+}
+
+func TestConcurrentSendMessage(t *testing.T) {
+	l := logger.NewStdLogger(log.Default())
+	_ = os.Setenv("MAX_TOKENS", "32")
+
+	mockClient := &mockGroqClient{
+		SendMessageFn: func(ctx context.Context, req chat.ChatRequest) (<-chan *chat.ChatStreamResponse, func(), error) {
+			stream := make(chan *chat.ChatStreamResponse)
+			go func() {
+				defer close(stream)
+				stream <- &chat.ChatStreamResponse{
+					Response: chat.ChatResponse{
+						ID:      "some-id",
+						Choices: []chat.Choice{{Delta: chat.Message{Role: "assistant", Content: "Hello"}}},
+					},
+					Error: nil,
+				}
+			}()
+			return stream, func() {}, nil
+		},
+	}
+
+	server := &Server{
+		groqClient: mockClient,
+		logger:     l,
+	}
+
+	var wg sync.WaitGroup
+	numRequests := 10
+	wg.Add(numRequests)
+
+	for i := 0; i < numRequests; i++ {
+		go func() {
+			defer wg.Done()
+			body := ChatRequestBody{
+				Messages: []ChatMessage{{Role: "user", Content: "Hello"}},
+				Model:    chat.ModelIDLLAMA38B,
+			}
+			jsonBody, _ := json.Marshal(body)
+			req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewBuffer(jsonBody))
+			w := httptest.NewRecorder()
+
+			server.SendMessage(w, req)
+			res := w.Result()
+			defer res.Body.Close()
+
+			if res.StatusCode != http.StatusOK {
+				t.Errorf("expected status 200, got %d", res.StatusCode)
+			}
+		}()
+	}
+
+	wg.Wait()
 }
