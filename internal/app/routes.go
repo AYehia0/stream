@@ -4,7 +4,6 @@ import (
 	"stream/internal/api"
 )
 
-// reload the application routes
 func (a *App) reloadRoutes() {
 
 	appHandler := api.NewServer(a.logger)

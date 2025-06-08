@@ -13,13 +13,12 @@ import (
 	"github.com/tmaxmax/go-sse"
 )
 
-// the streaming logic
 type ChatStreamResponse struct {
 	Response ChatResponse
 	Error    error
 }
 
-// ChatStream is an interface for streaming chat responses
+// SendMessage is an interface for streaming chat responses
 func (c *groqClient) SendMessage(ctx context.Context, req ChatRequest) (<-chan *ChatStreamResponse, func(), error) {
 
 	url := fmt.Sprintf("%s/v1/chat/completions", c.BaseURL)
@@ -78,7 +77,6 @@ func (c *groqClient) SendMessage(ctx context.Context, req ChatRequest) (<-chan *
 	})
 
 	// TODO: Cleanup function to unsubscribe from the SSE connection
-
 	return responseCh, func() {
 		cancel()
 		rm()

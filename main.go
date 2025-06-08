@@ -9,6 +9,11 @@ import (
 	"stream/pkg/logger"
 )
 
+//	@title			Stream Service API
+//	@version		1.0
+//	@description	This is a sample server for a Groq stream service.
+
+// @host	localhost:8080
 func main() {
 	config.ReadEnv()
 

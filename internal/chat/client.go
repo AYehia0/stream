@@ -10,7 +10,6 @@ const (
 )
 
 type GroqClient interface {
-	// SendMessage sends a chat message to the Groq API and returns the response
 	SendMessage(ctx context.Context, req ChatRequest) (<-chan *ChatStreamResponse, func(), error)
 }
 
