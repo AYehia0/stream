@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"stream/internal/api"
+	"stream/internal/persistence"
 	"stream/pkg/logger"
 	"time"
 )
@@ -13,18 +14,20 @@ import (
 type App struct {
 	logger logger.Logger
 	router *http.ServeMux
+	db     persistence.ConversationStore
 }
 
-func New(logger logger.Logger) *App {
+func New(logger logger.Logger, db persistence.ConversationStore) *App {
 	return &App{
 		logger: logger,
 		router: http.NewServeMux(),
+		db:     db,
 	}
 }
 
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "https://ayehia0.com")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
@@ -39,7 +42,9 @@ func withCORS(next http.Handler) http.Handler {
 
 func (a *App) Run(ctx context.Context) error {
 
-	a.reloadRoutes()
+	handler := api.NewHandler(a.logger, a.db)
+
+	a.reloadRoutes(handler)
 
 	server := &http.Server{
 		Addr:    ":8080",

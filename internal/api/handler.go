@@ -7,7 +7,25 @@ import (
 	"os"
 	"strconv"
 	"stream/internal/chat"
+	"stream/internal/persistence"
+	"stream/pkg/logger"
+	"strings"
 )
+
+type Handler struct {
+	logger     logger.Logger
+	groqClient chat.GroqClient
+	db         persistence.ConversationStore
+}
+
+func NewHandler(logger logger.Logger, db persistence.ConversationStore) *Handler {
+	groqClient := chat.NewGroqClient(os.Getenv("GROQ_API_KEY"))
+	return &Handler{
+		logger:     logger,
+		groqClient: groqClient,
+		db:         db,
+	}
+}
 
 type ChatMessage struct {
 	Role    string `json:"role"`
@@ -47,10 +65,10 @@ type ChatRequestBody struct {
 //	@Failure		400		{string}	string			"Bad Request"
 //	@Failure		500		{string}	string			"Internal Server Error"
 //	@Router			/chat [post]
-func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) { // Request
+func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request) { // Request
 	maxTokens, err := strconv.Atoi(os.Getenv("MAX_TOKENS"))
 	if err != nil {
-		s.logger.Printf("failed to parse MAX_TOKENS: %v", err)
+		h.logger.Printf("failed to parse MAX_TOKENS: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -59,7 +77,7 @@ func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) { // Reques
 	// message should have this format: { body: [] ChatMessage{ role: "user", content: "Hello" }}
 	var body ChatRequestBody
 	if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
-		s.logger.Printf("failed to decode request body: %v", err)
+		h.logger.Printf("failed to decode request body: %v", err)
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
@@ -82,15 +100,21 @@ func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) { // Reques
 	// add the user messages to the request
 	for _, msg := range body.Messages {
 		if err = addMessageToRequest(&req, msg); err != nil {
-			s.logger.Printf("failed to add message to request: %v", err)
+			h.logger.Printf("failed to add message to request: %v", err)
 			http.Error(w, "Bad Request", http.StatusBadRequest)
 			return
 		}
 	}
 
-	sse, cancel, err := s.groqClient.SendMessage(r.Context(), req)
+	// set the headers for SSE before writing calling the Groq API
+	// to catch any client disconnects early
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	sse, cancel, err := h.groqClient.SendMessage(r.Context(), req)
 	if err != nil {
-		s.logger.Printf("failed to send message: %v", err)
+		h.logger.Printf("failed to send message: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -99,14 +123,12 @@ func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) { // Reques
 		defer cancel()
 	}
 
-	// get tokens and write them to the response
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
+	var conversationID string
+	var assistantResponse strings.Builder
 
 	for response := range sse {
 		if response.Error != nil {
-			s.logger.Printf("error in SSE stream: %v", response.Error)
+			h.logger.Printf("error in SSE stream: %v", response.Error)
 			// TODO: handle internal errors accordingly
 			http.Error(w, response.Error.Error(), http.StatusInternalServerError)
 			return
@@ -116,10 +138,17 @@ func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) { // Reques
 			continue
 		}
 
+		// capture the conversation ID from the response; since we're streaming the response
+		// we can't get it after the stream ends because the channel will be closed
+		conversationID = response.Response.ID
+
 		if content := response.Response.Choices[0].Delta.Content; content != "" {
-			_, err := w.Write([]byte(content))
+			// Append the content to the assistant response
+			assistantResponse.WriteString(content)
+
+			_, err = w.Write([]byte(content))
 			if err != nil {
-				s.logger.Printf("failed to write response: %v", err)
+				h.logger.Printf("failed to write response: %v", err)
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				return
 			}
@@ -127,6 +156,37 @@ func (s *Server) SendMessage(w http.ResponseWriter, r *http.Request) { // Reques
 				f.Flush()
 			}
 		}
+	}
+	go h.persistMessages(conversationID, body.Messages, assistantResponse.String())
+}
+
+func (h *Handler) persistMessages(conversationID string, userMessages []ChatMessage, assistantReply string) {
+	for _, msg := range userMessages {
+		err := h.db.AppendMessage(conversationID, persistence.Message{
+			Role:    msg.Role,
+			Content: msg.Content,
+		})
+		if err != nil {
+			h.logger.Printf("failed to save user message: %v", err)
+		}
+	}
+
+	err := h.db.AppendMessage(conversationID, persistence.Message{
+		Role:    "assistant",
+		Content: assistantReply,
+	})
+	if err != nil {
+		h.logger.Printf("failed to save assistant response: %v", err)
+	}
+
+	// Optional: log summary or most recent messages
+	messages, err := h.db.GetRecentMessages(conversationID, 20)
+	if err != nil {
+		h.logger.Printf("failed to fetch recent messages: %v", err)
+		return
+	}
+	for _, msg := range messages {
+		h.logger.Printf("Message: %s, Role: %s", msg.Content, msg.Role)
 	}
 }
 
@@ -164,12 +224,12 @@ func addMessageToRequest(req *chat.ChatRequest, msg ChatMessage) error {
 //	@Success		200	{object}	map[string]string	"Server status"
 //	@Failure		500	{string}	string				"Internal Server Error"
 //	@Router			/status [get]
-func (s *Server) Status(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Status(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
 	response := map[string]string{"status": "OK"}
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		s.logger.Printf("failed to write response: %v", err)
+		h.logger.Printf("failed to write response: %v", err)
 	}
 }

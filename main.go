@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"stream/internal/app"
 	"stream/internal/config"
+	"stream/internal/persistence"
 	"stream/pkg/logger"
 )
 
@@ -25,7 +26,9 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	a := app.New(log)
+	db := persistence.NewPersistence(persistence.MemoryStorage)
+
+	a := app.New(log, db)
 
 	if err := a.Run(ctx); err != nil {
 		log.Fatalf("failed to start server: %v", err)

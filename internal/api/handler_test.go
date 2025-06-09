@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"stream/internal/chat"
+	"stream/internal/persistence"
 	"stream/pkg/logger"
 	"strings"
 	"sync"
@@ -46,9 +47,10 @@ func TestSendMessage_Success(t *testing.T) {
 		},
 	}
 
-	server := &Server{
+	server := &Handler{
 		groqClient: mockClient,
 		logger:     l,
+		db:         persistence.NewInMemoryStore(),
 	}
 
 	body := ChatRequestBody{
@@ -74,7 +76,7 @@ func TestSendMessage_Success(t *testing.T) {
 
 func TestSendMessage_InvalidJSON(t *testing.T) {
 	l := logger.NewStdLogger(log.Default())
-	server := &Server{
+	server := &Handler{
 		logger: l,
 	}
 
@@ -94,7 +96,7 @@ func TestSendMessage_InvalidJSON(t *testing.T) {
 
 func TestSendMessage_MissingMaxTokens(t *testing.T) {
 	l := logger.NewStdLogger(log.Default())
-	server := &Server{
+	server := &Handler{
 		logger: l,
 	}
 
@@ -114,7 +116,7 @@ func TestSendMessage_MissingMaxTokens(t *testing.T) {
 
 func TestSendMessage_InvalidRole(t *testing.T) {
 	l := logger.NewStdLogger(log.Default())
-	server := &Server{
+	server := &Handler{
 		logger: l,
 	}
 
@@ -158,9 +160,10 @@ func TestConcurrentSendMessage(t *testing.T) {
 		},
 	}
 
-	server := &Server{
+	server := &Handler{
 		groqClient: mockClient,
 		logger:     l,
+		db:         persistence.NewInMemoryStore(),
 	}
 
 	var wg sync.WaitGroup
@@ -189,4 +192,55 @@ func TestConcurrentSendMessage(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestSendMessage_SaveConversation(t *testing.T) {
+	l := logger.NewStdLogger(log.Default())
+	_ = os.Setenv("MAX_TOKENS", "32")
+
+	mockClient := &mockGroqClient{
+		SendMessageFn: func(ctx context.Context, req chat.ChatRequest) (<-chan *chat.ChatStreamResponse, func(), error) {
+			stream := make(chan *chat.ChatStreamResponse)
+			go func() {
+				defer close(stream)
+				stream <- &chat.ChatStreamResponse{
+					Response: chat.ChatResponse{
+						ID:      "some-id",
+						Choices: []chat.Choice{{Delta: chat.Message{Role: "assistant", Content: "Hello"}}},
+					},
+					Error: nil,
+				}
+			}()
+			return stream, func() {}, nil
+		},
+	}
+
+	server := &Handler{
+		groqClient: mockClient,
+		logger:     l,
+		db:         persistence.NewInMemoryStore(),
+	}
+
+	body := ChatRequestBody{
+		Messages: []ChatMessage{{Role: "user", Content: "Hello"}},
+		Model:    chat.ModelIDLLAMA38B,
+	}
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewBuffer(jsonBody))
+	w := httptest.NewRecorder()
+
+	server.SendMessage(w, req)
+	res := w.Result()
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", res.StatusCode)
+	}
+
+	responseBody, _ := io.ReadAll(res.Body)
+	if !strings.Contains(string(responseBody), "Hello") {
+		t.Fatalf("expected response to contain 'Hello', got: %s", string(responseBody))
+	}
+
+	// Here you would typically check if the conversation was saved in the database.
 }
