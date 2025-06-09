@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -112,7 +113,16 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request) { // Reque
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	sse, cancel, err := h.groqClient.SendMessage(r.Context(), req)
+	// handle client closing the connection
+	ctx, cancel := context.WithCancel(r.Context())
+
+	go func() {
+		<-r.Context().Done()
+		h.logger.Println("client disconnected, cancelling context")
+		cancel()
+	}()
+
+	sse, cancel, err := h.groqClient.SendMessage(ctx, req)
 	if err != nil {
 		h.logger.Printf("failed to send message: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -150,6 +160,7 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request) { // Reque
 			if err != nil {
 				h.logger.Printf("failed to write response: %v", err)
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				cancel()
 				return
 			}
 			if f, ok := w.(http.Flusher); ok {
