@@ -22,8 +22,8 @@ docker compose -f compose-dev.yml up --build
 ## Todo
 - [ ] Handle errors and edge cases that could happen from groq's side
 - [X] Make groq remmeber the context of the conversation
-- [ ] Allow stopping the conversation while groq is thinking/processing
-- [ ] Add a way to save and load the conversation
+- [X] Allow stopping the conversation while groq is thinking/processing
+- [X] Add a way to save and load the conversation
 - [X] Write tests for the code
 - [X] Properly display the conversation in the UI: using markdown, etc.
 - [X] Add endpoint to check if service is up and running
